@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { createClient, RedisClient, RedisClientType } from 'redis';
+import { createClient, RedisClientType } from 'redis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
@@ -9,9 +9,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     constructor() {
         this.client = createClient({
             socket: {
-                host : process.env.REDIS_HOST ?? 'localhost',
-                port : Number(process.env.REDIS_PORT ?? 6379)
-            }
+                host : process.env.REDIS_HOST,
+                port : Number(process.env.REDIS_PORT),
+                ...(process.env.REDIS_TLS === 'true' ? { tls: true as const } : {})
+            },
+            username: process.env.REDIS_USERNAME || undefined,
+            password: process.env.REDIS_PASSWORD || undefined
         });
 
         this.client.on('error', (error) => {
