@@ -42,13 +42,19 @@ export class AuthService {
         };
 
         const accessToken = await this.jwtService.signAsync(
-            {sub: user.id, email:user.email},
-            {secret: this.accessSecret, expiresIn: this.accessTTL as StringValue}
+            {
+                sub: user.id,
+                email:user.email
+            },
+            {
+                secret: this.accessSecret,
+                expiresIn: Math.floor(Number(this.accessTTL)/1000)
+            }
         );
 
         const refreshToken = await this.jwtService.signAsync(payload,{
             secret: this.refreshSecret,
-            expiresIn: this.refreshTTL as StringValue
+            expiresIn: Math.floor(Number(this.refreshTTL)/1000)
         });
 
         return { accessToken, refreshToken };
@@ -98,7 +104,7 @@ export class AuthService {
         const sessionId = createSessionId();
         const { accessToken, refreshToken } = await this.issueTokens(user, sessionId);
         const expiresAt = new Date(
-            Date.now() + Number(this.refreshTTL) * 24 * 60 * 60 * 1000,
+            Date.now() + Number(this.refreshTTL),
         );
 
         await this.prisma.authSession.create({
@@ -140,10 +146,7 @@ export class AuthService {
             return { message: 'Logged out' };
         }
 
-        if (
-            typeof payload.sub !== 'number' ||
-            typeof payload.sid !== 'string'
-        ) {
+        if (typeof payload.sub !== 'number' || typeof payload.sid !== 'string') {
             return { message: 'Logged out' };
         }
 

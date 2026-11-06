@@ -1,5 +1,6 @@
 import { Controller, Body, Post, HttpCode, HttpStatus, Res, Req, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto.js';
@@ -18,7 +19,8 @@ export class AuthController {
     };
 
     constructor(
-        private readonly auth:AuthService
+        private readonly auth:AuthService,
+        private readonly config:ConfigService
     ){}
 
     @Post('register')
@@ -35,10 +37,16 @@ export class AuthController {
     @ApiResponse({status:200, description:'Login SUccessfull'})
     async login(@Body() dto:LoginDTO, @Res({passthrough:true}) res: Response) {
         const result = await this.auth.loginUser(dto);
-        res.cookie('refresh_token', result.refreshToken, this.cookieOptions);
+        res.cookie('refresh_token', result.refreshToken, {
+            ...this.cookieOptions,
+            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS'))}
+        });
+        res.cookie('access_token', result.accessToken, {
+            ...this.cookieOptions,
+            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL'))}
+        });
         return {
             message: result.message,
-            accessToken: result.accessToken,
             user: result.user
         };
     }
@@ -50,9 +58,18 @@ export class AuthController {
         if( !token ) {
             throw new UnauthorizedException('Refresh token required');
         }
-        const result = await this.auth.refreshTokens(token);
-        res.cookie('refresh_token', result.refreshToken, this.cookieOptions);
-        return { accessToken: result.accessToken };
+        const result = await this.auth.refreshTokens(token);        
+        res.cookie('refresh_token', result.refreshToken, {
+            ...this.cookieOptions,
+            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS'))}
+        });
+        res.cookie('access_token', result.accessToken, {
+            ...this.cookieOptions,
+            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL'))}
+        });
+        return {
+            message: 'success'
+        };
     }
 
     @Post('logout')
@@ -64,14 +81,16 @@ export class AuthController {
         await this.auth.logoutUser(token ?? '');
 
         res.clearCookie('refresh_token', {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            // sameSite: 'none',
-            path: '/auth',
+            ...this.cookieOptions,
+            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS'))}
         });
 
-        return { message: 'Logged out successfully' };
+        res.clearCookie('access_token', {
+            ...this.cookieOptions,
+            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL'))}
+        })
+
+        return { message: 'Logged out successfully from backend' };
     }
 
 }
