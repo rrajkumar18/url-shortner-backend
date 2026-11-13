@@ -5,31 +5,43 @@ import { createClient, RedisClientType } from 'redis';
 export class RedisService implements OnModuleInit, OnModuleDestroy {
 
     private readonly client:RedisClientType;
+    private readonly subscriberClient: RedisClientType;
 
     constructor() {
-        this.client = createClient({
+        const clientOptions = {
             socket: {
-                host : process.env.REDIS_HOST,
-                port : Number(process.env.REDIS_PORT),
+                host: process.env.REDIS_HOST,
+                port: Number(process.env.REDIS_PORT),
                 ...(process.env.REDIS_TLS === 'true' ? { tls: true as const } : {})
             },
             username: process.env.REDIS_USERNAME || undefined,
             password: process.env.REDIS_PASSWORD || undefined
-        });
+        };
+        
+        this.client = createClient(clientOptions);
+        // Dedicated connection for Pub/Sub listeners
+        // In node-redis (v4+), once a Redis connection enters subscriber mode via .subscribe(), 
+        // it cannot execute regular commands (get, set, etc.). 
+        // To prevent breaking cache, create a dedicated duplicated client
+        this.subscriberClient = this.client.duplicate();
 
-        this.client.on('error', (error) => {
-            console.error('Redis error:', error.message);
-        });
+        this.client.on('error', (error) => console.error('Redis client error:', error.message));
+        this.subscriberClient.on('error', (error) => console.error('Redis subscriber error:', error.message));
+
     }
 
     async onModuleInit() {
-        await this.client.connect();
+        await Promise.all([
+            this.client.connect(),
+            this.subscriberClient.connect()
+        ]);
     }
 
     async onModuleDestroy() {
-        if( this.client.isOpen ) {
-            this.client.quit();
-        }
+        await Promise.all([
+            this.client.isOpen ? this.client.quit() : Promise.resolve(),
+            this.subscriberClient.isOpen ? this.subscriberClient.quit() : Promise.resolve()
+        ]);
     }
 
     async get(key:string):Promise<string | null> {
@@ -53,10 +65,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         await this.set('url-shortener:test', 'Redis is working');
         return (await this.get('url-shortener:test')) ?? 'No value found';
     }
-
     
     async increment(key: string): Promise<number> {
         return this.client.incr(key);
+    }
+
+    // --- PUB / SUB METHODS ---
+
+    async publish(channel: string, message: string): Promise<number> {
+        return this.client.publish(channel, message);
+    }
+
+    async subscribe(channel: string, listener: (message: string) => void): Promise<void> {
+        await this.subscriberClient.subscribe(channel, listener);
+    }
+
+    async unsubscribe(channel: string, listener?: (message: string) => void): Promise<void> {
+        await this.subscriberClient.unsubscribe(channel, listener);
     }
 
 }

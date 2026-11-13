@@ -23,6 +23,21 @@ export class AuthController {
         private readonly config:ConfigService
     ){}
 
+    private accessCookieOptions() {
+        return {
+            ...this.cookieOptions,
+            path: '/',
+            maxAge: Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL')),
+        };
+    }
+
+    private refreshCookieOptions() {
+        return {
+            ...this.cookieOptions,
+            maxAge: Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS')),
+        };
+    }
+
     @Post('register')
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({summary:'Register a new user'})
@@ -37,14 +52,8 @@ export class AuthController {
     @ApiResponse({status:200, description:'Login SUccessfull'})
     async login(@Body() dto:LoginDTO, @Res({passthrough:true}) res: Response) {
         const result = await this.auth.loginUser(dto);
-        res.cookie('refresh_token', result.refreshToken, {
-            ...this.cookieOptions,
-            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS'))}
-        });
-        res.cookie('access_token', result.accessToken, {
-            ...this.cookieOptions,
-            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL'))}
-        });
+        res.cookie('refresh_token', result.refreshToken, this.refreshCookieOptions());
+        res.cookie('access_token', result.accessToken, this.accessCookieOptions());
         return {
             message: result.message,
             user: result.user
@@ -59,14 +68,8 @@ export class AuthController {
             throw new UnauthorizedException('Refresh token required');
         }
         const result = await this.auth.refreshTokens(token);        
-        res.cookie('refresh_token', result.refreshToken, {
-            ...this.cookieOptions,
-            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS'))}
-        });
-        res.cookie('access_token', result.accessToken, {
-            ...this.cookieOptions,
-            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL'))}
-        });
+        res.cookie('refresh_token', result.refreshToken, this.refreshCookieOptions());
+        res.cookie('access_token', result.accessToken, this.accessCookieOptions());
         return {
             message: 'success'
         };
@@ -80,15 +83,8 @@ export class AuthController {
         const token = req.cookies?.refresh_token as string | undefined;
         await this.auth.logoutUser(token ?? '');
 
-        res.clearCookie('refresh_token', {
-            ...this.cookieOptions,
-            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_REFRESH_DAYS'))}
-        });
-
-        res.clearCookie('access_token', {
-            ...this.cookieOptions,
-            ...{maxAge:Number(this.config.getOrThrow<string>('JWT_ACCESS_TTL'))}
-        })
+        res.clearCookie('refresh_token', this.refreshCookieOptions());
+        res.clearCookie('access_token', this.accessCookieOptions());
 
         return { message: 'Logged out successfully from backend' };
     }

@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException, ConflictException, InternalServerErrorException, BadRequestException, Scope, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, InternalServerErrorException, BadRequestException, Scope, Inject, MessageEvent } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { REQUEST } from '@nestjs/core';
-import type { Request } from 'express';
+import { Observable } from 'rxjs';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
 import { validateDestination } from './url-validation.js';
 import { AnalyticsService } from '../analytics/analytics.service.js';
+import type { Request } from 'express';
 
 
 @Injectable({
@@ -32,7 +33,7 @@ export class UrlsService {
         return `url:${shortCode}`;
     }
 
-    async create(originalUrl:string) {
+    async create(originalUrl:string, userId?: number) {
         validateDestination(originalUrl);
         const maxAttempts:number = 5;
         for( let attempt=0; attempt < maxAttempts; attempt++ ) {
@@ -42,7 +43,8 @@ export class UrlsService {
                 const url = await this.prisma.url.create({
                     data : {
                         originalUrl,
-                        shortCode
+                        shortCode,
+                        ...(userId !== undefined ? { userId } : {}),
                     }
                 });
                 // do not await here
@@ -76,9 +78,9 @@ export class UrlsService {
             }
             if( cachedUrl != null ) {
                 this.cacheHits++;
-                // Push to Queue instead of directly hitting Redis
+                // Push to Queue and increase counter in Redis also
                 await this.analytics.trackRedirect(shortCode);
-                // await this.redis.increment(`stats:redirects:${shortCode}`);
+                await this.redis.increment(`stats:redirects:${shortCode}`);
                 return cachedUrl;
             }
             this.cacheMisses++;
@@ -108,7 +110,6 @@ export class UrlsService {
             console.error('Redis cache write failed:', error);
         }
         await this.analytics.trackRedirect(shortCode);
-        // await this.redis.increment(`stats:redirects:${shortCode}`);
         return originalUrl;
     }
 
@@ -165,6 +166,92 @@ export class UrlsService {
             shortCode,
             redirectCount: Number(count ?? 0),
         };
+    }
+
+    async getAllLinks(userId:number|undefined, page:number, limit:number) {
+        const skip = (page - 1) * limit;
+        const [data, total] = await this.prisma.$transaction([
+            this.prisma.url.findMany({
+                skip,
+                take: limit,
+                orderBy: {
+                    createdAt: 'desc'
+                },
+                where: {
+                    userId: userId
+                },
+                select: {
+                    id: true,
+                    originalUrl: true,
+                    createdAt: true,
+                    shortCode: true,
+                    userId: true,
+                    redirectCount: true,
+                }
+            }),
+            this.prisma.url.count({
+                where: {
+                    userId: userId
+                }
+            })
+        ]);        
+        return {
+            data,
+            pagination: {
+                total, page, limit,
+                totalPages: Math.ceil(total / limit),
+                hasNextPage: page * limit < total,
+                hasPreviousPage: page > 1,
+            }
+        };
+    }
+
+    async getDashboardStats(userId:number|undefined) {
+        const [totalLinks, totalClicks] = await this.prisma.$transaction([
+            this.prisma.url.count({
+                where: {
+                    userId: userId
+                }
+            }),
+            this.prisma.url.aggregate({
+                _sum: {
+                    redirectCount: true
+                },
+                where: {
+                    userId: userId
+                }
+            })
+        ]);
+        return {
+            totalLinks,
+            "totalClicks": totalClicks['_sum']['redirectCount']
+        };
+    }
+
+    subscribeToUserClicks(userId: number): Observable<MessageEvent> {
+        const channel = `user:${userId}:clicks`;
+        return new Observable<MessageEvent>((subscriber) => {
+            const listener = (message: string) => {
+                try {
+                    const data = JSON.parse(message);
+                    subscriber.next({ data } as MessageEvent);
+                } catch (err) {
+                    console.error(`Failed to parse click message on ${channel}:`, err);
+                }
+            };
+            
+            // 1. Start listening to Redis Pub/Sub for this user
+            this.redis.subscribe(channel, listener).catch((err) => {
+                subscriber.error(err);
+            });
+
+            // 2. Teardown: runs automatically when the SSE client disconnects
+            return () => {
+                this.redis.unsubscribe(channel, listener).catch((err) => {
+                    console.error(`Failed to unsubscribe from ${channel}:`, err);
+                });
+            };
+        });
     }
 
 }

@@ -5,6 +5,7 @@ import { AuthService } from './auth.service.js';
 import { AuthController } from './auth.controller.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AccessTokenGuard } from './guards/access-token.guard.js';
+import { OptionalAccessTokenGuard } from './guards/optional-access-token.guard.js';
 
 @Module({
   imports: [
@@ -22,8 +23,8 @@ import { AccessTokenGuard } from './guards/access-token.guard.js';
     //   })
     // })
   ],
-  providers: [AuthService, AccessTokenGuard],
+  providers: [AuthService, AccessTokenGuard, OptionalAccessTokenGuard],
   controllers: [AuthController],
-  exports: [AuthService, AccessTokenGuard]
+  exports: [AuthService, AccessTokenGuard, OptionalAccessTokenGuard, JwtModule]
 })
 export class AuthModule {}
