@@ -20,8 +20,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         
         this.client = createClient(clientOptions);
 
-        this.client.on('connect', () => console.log('[REDIS] Connecting...'));
-        this.client.on('ready', () => console.log('[REDIS] Connected!'));
+        this.client.on('connect', () => console.log('[REDIS] client Connecting...'));
+        this.client.on('ready', () => console.log('[REDIS] client Connected!'));
         this.client.on('error', (error) => console.error('[REDIS] Error:', error));
         this.client.on('reconnecting', () => console.log('[REDIS] Reconnecting...'));
 
