@@ -19,14 +19,22 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         };
         
         this.client = createClient(clientOptions);
+
+        this.client.on('connect', () => console.log('[REDIS] Connecting...'));
+        this.client.on('ready', () => console.log('[REDIS] Connected!'));
+        this.client.on('error', (error) => console.error('[REDIS] Error:', error));
+        this.client.on('reconnecting', () => console.log('[REDIS] Reconnecting...'));
+
         // Dedicated connection for Pub/Sub listeners
         // In node-redis (v4+), once a Redis connection enters subscriber mode via .subscribe(), 
         // it cannot execute regular commands (get, set, etc.). 
         // To prevent breaking cache, create a dedicated duplicated client
-        this.subscriberClient = this.client.duplicate();
 
-        this.client.on('error', (error) => console.error('Redis client error:', error.message));
-        this.subscriberClient.on('error', (error) => console.error('Redis subscriber error:', error.message));
+        this.subscriberClient = this.client.duplicate();    
+        this.subscriberClient.on('connect', () => console.log('[REDIS] Subscriber Connecting...'));
+        this.subscriberClient.on('ready', () => console.log('[REDIS] Subscriber Connected!'));
+        this.subscriberClient.on('error', (error) => console.error('[REDIS] Subscriber Error:', error));
+        this.subscriberClient.on('reconnecting', () => console.log('[REDIS] Subscriber Reconnecting...'));
 
     }
 
