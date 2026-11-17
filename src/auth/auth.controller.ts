@@ -1,5 +1,5 @@
-import { Controller, Body, Post, HttpCode, HttpStatus, Res, Req, UnauthorizedException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Body, Post, HttpCode, HttpStatus, Res, Req, UnauthorizedException, HttpException, InternalServerErrorException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service.js';
@@ -41,9 +41,23 @@ export class AuthController {
     @Post('register')
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({summary:'Register a new user'})
-    @ApiResponse({status:200, description:'Users registered successfully'})
+    @ApiResponse({status:201, description:'Users registered successfully'})
+    @ApiResponse({status: 400, description: 'Invalid registration data' })
+    @ApiResponse({status: 409, description: 'User already exists' })
+    @ApiResponse({status: 500, description: 'Internal server error' })
     async register(@Body() dto:RegisterDto) {
-        return await this.auth.registerUser(dto);
+        try {
+            return await this.auth.registerUser(dto);
+        } catch ( err ) {
+            console.log("error creating user", err instanceof Error ? err.stack : String(err));
+            if (err instanceof HttpException) {
+                throw err;
+            }
+
+            throw new InternalServerErrorException(
+                'Unable to register user. Please try again later.',
+            );
+        }
     }
 
     @Post('login')

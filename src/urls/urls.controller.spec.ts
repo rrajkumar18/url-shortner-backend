@@ -7,6 +7,7 @@ import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UrlsController } from './urls.controller.js';
 import { UrlsService } from './urls.service.js';
+import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
 import { OptionalAccessTokenGuard } from '../auth/guards/optional-access-token.guard.js';
 import type { RequestWithUser } from '../auth/guards/access-token.guard.js';
 
@@ -37,6 +38,8 @@ describe('UrlsController', () => {
       ],
     })
       .overrideGuard(OptionalAccessTokenGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(AccessTokenGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
@@ -103,6 +106,8 @@ describe('UrlsController', () => {
             configService as unknown as ConfigService,
           ),
         )
+        .overrideGuard(AccessTokenGuard)
+        .useValue({ canActivate: () => true })
         .compile();
 
       app = moduleRef.createNestApplication();
